@@ -1,5 +1,7 @@
 """只检查可确定约束；语气、分寸和增益须人工评估。"""
 import argparse
+import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -45,26 +47,60 @@ def run(response_path, allow_partial=False):
     assert 'description:' in skill
     entries = load(ROOT/'references/analects.json')
     fixture = load(ROOT/'tests/source-fixture.json')
-    assert entries == fixture, '原典与已审读基准快照不一致，须回看来源'
-    assert len({e['编号'] for e in entries}) == 11
-    md = (ROOT/'references/analects.md').read_text(encoding='utf-8')
-    for e in entries:
-        assert e['原文'] in md and f"## {e['编号']} 《论语·{e['篇名']}》" in md
+    by_entry = {e['编号']: e for e in entries}
+    assert len(by_entry) == len(entries) == 512
+    assert all(by_entry[e['编号']] == e for e in fixture), '原有十一章与已审读快照不一致'
+    manifest = load(ROOT/'references/corpus-manifest.json')
+    assert manifest['篇数'] == 20 and manifest['章数'] == 512
+    assert hashlib.sha256((ROOT/'references/analects.json').read_bytes()).hexdigest() == manifest['整理数据SHA-256']
+    expected_counts = [16,24,26,26,28,30,38,21,31,27,26,24,30,44,42,14,26,11,25,3]
+    assert len(manifest['篇目']) == 20
+    expected_ids = []
+    for index, (book, count) in enumerate(zip(manifest['篇目'], expected_counts), 1):
+        assert book['篇序'] == index and book['章数'] == count
+        path = ROOT/'references'/book['文件']
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == book['SHA-256']
+        md = path.read_text(encoding='utf-8')
+        ids = [f'{index}.{j}' for j in range(1, count+1)]
+        expected_ids.extend(ids)
+        assert re.findall(r'^## (\d+\.\d+) ', md, re.M) == ids, '篇内遗漏或重复章号'
+        for ident in ids:
+            e = by_entry[ident]
+            assert e['篇名'] == book['篇名'] and e['原文'].strip()
+            assert e['原文'] in md and f"## {ident} 《论语·{e['篇名']}》" in md
+    assert [e['编号'] for e in entries] == expected_ids
+    compared = manifest['交叉比对']
+    matches, differences = set(compared['整章归一化匹配']), set(compared['差异待核'])
+    assert matches.isdisjoint(differences) and matches | differences == set(by_entry)
+    assert len(matches) == 445 and len(differences) == 67
+    spec = importlib.util.spec_from_file_location('lunyu_lookup_check', ROOT/'scripts/lookup.py')
+    lookup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lookup)
+    for ident in expected_ids:
+        assert lookup.search(entries, ident=ident) == [by_entry[ident]], '章号检索遗漏'
+    for index, book in enumerate(manifest['篇目'], 1):
+        assert len(lookup.search(entries, chapter=book['篇名'])) == expected_counts[index-1]
+        assert len(lookup.search(entries, chapter=str(index))) == expected_counts[index-1]
+    assert {e['编号'] for e in lookup.search(entries, keyword='己所不欲，勿施于人')} == {'12.2','15.24'}
+    assert [e['编号'] for e in lookup.search(entries, keyword='以直报怨')] == ['14.34']
+    assert not lookup.search(entries, ident='20.4')
+    assert not lookup.search(entries, keyword='凡事先爱自己')
     for path in ROOT.rglob('*.md'):
         for link in re.findall(r'\]\(([^)]+)\)', path.read_text(encoding='utf-8')):
             if '://' not in link and not link.startswith('#'):
                 assert (path.parent/link.split('#')[0]).exists(), f'断链：{path.name} {link}'
     cases = load(ROOT/'tests/cases.json')
-    assert len(cases) == 19 and len({c['编号'] for c in cases}) == 19
+    total = len(cases)
+    assert total == 31 and len({c['编号'] for c in cases}) == total
     assert {f for c in cases for f in c['失败模式']} == {str(i) for i in range(1,11)}
-    assert {c['主题'] for c in cases} == {'学','知','改过','忠恕','和而不同','交友','慎言','自省'}
+    assert {'学','知','改过','忠恕','和而不同','交友','慎言','自省','家庭','亲密关系','工作','金钱','情绪','哀伤','管理','人生选择','历史争议','健康','全文核查','历史礼制'} <= {c['主题'] for c in cases}
     responses = load(response_path)['回复']
     by_id = {r['编号']:r['回答'] for r in responses}
     assert len(by_id) == len(responses), '回复编号重复'
     if allow_partial:
         assert by_id and set(by_id) <= {c['编号'] for c in cases}, '用例编号未知或结果为空'
     else:
-        assert len(by_id) == 19, '完整回归需要十九条结果；部分真实记录请使用 --allow-partial'
+        assert set(by_id) == {c['编号'] for c in cases}, '完整回归需要31条结果；部分真实记录请使用 --allow-partial'
     active_cases = [c for c in cases if c['编号'] in by_id]
     failures = []
     for c in active_cases:
@@ -75,7 +111,7 @@ def run(response_path, allow_partial=False):
     if failures:
         raise AssertionError('\n'.join(failures))
     if allow_partial:
-        print(f'部分结果检查通过：{len(by_id)}/19 条；不代表完整回归或语义审读通过。')
+        print(f'部分结果检查通过：{len(by_id)}/{total} 条；不代表完整回归或语义审读通过。')
         return
     assert by_id['T11'].strip() == '391'
     assert len(by_id['T13'].splitlines()) == 3
@@ -101,7 +137,7 @@ def run(response_path, allow_partial=False):
     assert response_errors(exception, opening+'\n\n做一个最小练习。', entries), '例外强行引用未被检出'
     assert not response_errors(case, opening+'（短注）\n\n发现错误后及时补救。', entries), '首句已有引文不应误报缺失'
     lookup_case = next(c for c in cases if c['编号'] == 'T07')
-    assert not response_errors(lookup_case, '当前不能确认它出自《论语·学而》。本地只是选录。', entries), '提及篇名不等于引用原文'
+    assert not response_errors(lookup_case, '当前不能确认它出自《论语·学而》。本地这个底本未检出。', entries), '提及篇名不等于引用原文'
     dsh_path = ROOT/'tests/dsh-user-run.json'
     if dsh_path.exists():
         dsh = {r['编号']:r['回答'] for r in load(dsh_path)['回复']}
@@ -112,8 +148,10 @@ def run(response_path, allow_partial=False):
         print('通过：首句括注和仅提篇名的误报回归；DSH 原始引用后置记录仍被正确判为失败。')
     names = [p.name for p in ROOT.rglob('*') if p.is_file()]
     assert not any(re.search(r'README[._](en|ja|ko)|i18n|locales', name, re.I) for name in names)
-    print('通过：原典一致性、相对链接、八主题、十种失败模式与 19 条合成回归样例。')
-    print('通过：12 条首句引用、7 条不引用例外，以及纯计算和三条串列回复约束。')
+    print('通过：20篇512章完整顺序、逐篇正文与数据一致、哈希记录、原有11章快照。')
+    print('通过：512次按章查询、20篇按名称与序号查询、重复名句、标点检索及不存在句子的检索。')
+    print('通过：相对链接、八基础主题与十二个新增情境、十种失败模式、31条合成样例。')
+    print('通过：24条首句引用、7条不引用例外，以及纯计算和三条串列回复约束。')
     print('通过：3 条错误引文与 5 条缺失首句、引用后置、无回应或例外误引均被拒绝。')
     print('限制：白话解释是否正确、贴合处境，以及自然度、分寸、独立模型行为，仍需人工评估。')
 
