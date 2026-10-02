@@ -158,6 +158,6 @@ def run(response_path, allow_partial=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='检查原典、测试覆盖和已保存输出的可判定约束')
     parser.add_argument('--responses', type=Path, default=ROOT/'tests/author-responses.json')
-    parser.add_argument('--allow-partial', action='store_true', help='检查部分真实结果；不作为十九条完整回归')
+    parser.add_argument('--allow-partial', action='store_true', help='检查部分真实结果；不作为31条完整回归')
     args = parser.parse_args()
     run(args.responses, args.allow_partial)
