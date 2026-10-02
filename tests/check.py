@@ -25,11 +25,11 @@ def response_errors(case, text, entries):
     if not text.strip():
         return errors + ['缺失回复']
     if case['引用要求'] == '不引':
-        if re.search(r'子曰|孔子曰|《论语·', text):
+        if QUOTE.search(text) or re.match(r'\s*(?:子曰|孔子曰)', text):
             errors.append('例外情境仍然引用')
         return errors
     first_line = text.strip().splitlines()[0].strip()
-    opening = QUOTE.fullmatch(first_line)
+    opening = QUOTE.match(first_line)
     if not opening:
         return errors + ['首句缺少原文与出处，或引用后置']
     if opening.group(3) not in case['可用章号']:
@@ -39,7 +39,7 @@ def response_errors(case, text, entries):
     # 后续文本是否解释了“为什么”，不能用字符数、关键词代替人工语义审读。
     return errors
 
-def run(response_path):
+def run(response_path, allow_partial=False):
     skill = (ROOT/'SKILL.md').read_text(encoding='utf-8')
     assert skill.startswith('---\nname: lunyu-become-human\n')
     assert 'description:' in skill
@@ -60,11 +60,23 @@ def run(response_path):
     assert {c['主题'] for c in cases} == {'学','知','改过','忠恕','和而不同','交友','慎言','自省'}
     responses = load(response_path)['回复']
     by_id = {r['编号']:r['回答'] for r in responses}
-    assert len(by_id) == len(responses) == 19
-    for c in cases:
+    assert len(by_id) == len(responses), '回复编号重复'
+    if allow_partial:
+        assert by_id and set(by_id) <= {c['编号'] for c in cases}, '用例编号未知或结果为空'
+    else:
+        assert len(by_id) == 19, '完整回归需要十九条结果；部分真实记录请使用 --allow-partial'
+    active_cases = [c for c in cases if c['编号'] in by_id]
+    failures = []
+    for c in active_cases:
         text = by_id[c['编号']]
         errors = response_errors(c, text, entries)
-        assert not errors, f"{c['编号']}：{errors}"
+        if errors:
+            failures.append(f"{c['编号']}：{errors}")
+    if failures:
+        raise AssertionError('\n'.join(failures))
+    if allow_partial:
+        print(f'部分结果检查通过：{len(by_id)}/19 条；不代表完整回归或语义审读通过。')
+        return
     assert by_id['T11'].strip() == '391'
     assert len(by_id['T13'].splitlines()) == 3
     for ident, chapter_id in [('T08', '13.23'), ('T14', '15.30')]:
@@ -87,6 +99,17 @@ def run(response_path):
     assert all(response_errors(case, text, entries) for text in rejected), '缺失首句或回应未被检出'
     exception = next(c for c in cases if c['编号'] == 'T17')
     assert response_errors(exception, opening+'\n\n做一个最小练习。', entries), '例外强行引用未被检出'
+    assert not response_errors(case, opening+'（短注）\n\n发现错误后及时补救。', entries), '首句已有引文不应误报缺失'
+    lookup_case = next(c for c in cases if c['编号'] == 'T07')
+    assert not response_errors(lookup_case, '当前不能确认它出自《论语·学而》。本地只是选录。', entries), '提及篇名不等于引用原文'
+    dsh_path = ROOT/'tests/dsh-user-run.json'
+    if dsh_path.exists():
+        dsh = {r['编号']:r['回答'] for r in load(dsh_path)['回复']}
+        assert not response_errors(case, dsh['T02'], entries)
+        assert not response_errors(next(c for c in cases if c['编号']=='T01'), dsh['T01'], entries)
+        assert not response_errors(lookup_case, dsh['T07'], entries)
+        assert response_errors(next(c for c in cases if c['编号']=='T14'), dsh['T14'], entries), '真实引用后置输出应保持失败'
+        print('通过：首句括注和仅提篇名的误报回归；DSH 原始引用后置记录仍被正确判为失败。')
     names = [p.name for p in ROOT.rglob('*') if p.is_file()]
     assert not any(re.search(r'README[._](en|ja|ko)|i18n|locales', name, re.I) for name in names)
     print('通过：原典一致性、相对链接、八主题、十种失败模式与 19 条合成回归样例。')
@@ -97,5 +120,6 @@ def run(response_path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='检查原典、测试覆盖和已保存输出的可判定约束')
     parser.add_argument('--responses', type=Path, default=ROOT/'tests/author-responses.json')
+    parser.add_argument('--allow-partial', action='store_true', help='检查部分真实结果；不作为十九条完整回归')
     args = parser.parse_args()
-    run(args.responses)
+    run(args.responses, args.allow_partial)
