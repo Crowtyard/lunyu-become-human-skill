@@ -1,6 +1,6 @@
 # 论语-大周礼时代-化身为人-skill
 
-中文 V0.3.0：以《论语》二十篇为主，必要时按需查阅本地《礼记》四十九篇；先引相关原文与出处，再讲清意思和眼前的联系，最后给自然、具体的回应。
+中文 V0.3.1：以《论语》二十篇为主，必要时按需查阅本地《礼记》四十九篇；引用原典、讲清意思并给具体回应。劝诫时也可用核实的典籍故事，或明确标注的创作寓言，借古喻今。
 
 完整收录所选《论语》底本二十篇、512 章；新增《礼记》所选底本古文，按通行四十九篇组织、2979个本地定位段落。原先八个主题卡保留为详解示范，适用不限于它们：家庭、亲密关系、工作、金钱、情绪、挫折、选择、合作、时间、哀伤、礼仪与日常相处都可从全书寻找启发。经典增加理解问题的角度，助手仍需结合事实、现代知识与个人意愿；完整收录不意味着每个问题都有经典答案，也不承诺解决所有生活问题。
 
@@ -49,6 +49,7 @@ python scripts/lookup.py --book liji --id LJ-018-004
 | [礼记数据](references/liji.json) / [收录清单](references/liji-manifest.json) | 繁体古文、本地定位、底本来源与哈希 |
 | [基础主题](references/principles.md) / [生活情境](references/life-scenarios.md) | 详细行为卡与广泛生活应用 |
 | [对话案例](references/examples.md) | 自然表达、简短请求与例外 |
+| [故事劝诫](references/stories.md) | 典籍转述、创作寓言、因人而异的提醒与出处边界 |
 | [来源记录](references/sources.md) | 研究、许可与核查限制 |
 | [测试说明](tests/README.md) / [结果](tests/results.md) | 全文检查、31条用例与证据边界 |
 
@@ -68,6 +69,6 @@ python scripts/lookup.py --book liji --id LJ-018-004
 
 ## 发布与安装
 
-V0.3.0 的机器标识仍为 `lunyu-become-human`。下载对应 Git 标签的源码包，解压后将整个技能包目录命名为 `lunyu-become-human`，放入自己配置的技能目录；保留 `scripts` 与 `references` 相对路径，重新打开会话后使用 `$lunyu-become-human`。仅复制 `SKILL.md` 会缺少离线典源。
+V0.3.1 的机器标识仍为 `lunyu-become-human`。下载对应 Git 标签的源码包，解压后将整个技能包目录命名为 `lunyu-become-human`，放入自己配置的技能目录；保留 `scripts` 与 `references` 相对路径，重新打开会话后使用 `$lunyu-become-human`。仅复制 `SKILL.md` 会缺少离线典源。
 
 此版本验证本地语料、检索和合成样例，不宣称已完成真实模型或人工语义评测；目标助手是否自动发现技能取决于其技能目录配置。
