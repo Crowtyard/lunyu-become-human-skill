@@ -7,12 +7,13 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-QUOTE = re.compile(r'“([^”\n]+)”(?:[，。]?(?:见|出自)|[ \t]*——[ \t]*)《论语·([^》\n]+)》[ \t]*(\d+\.\d+)')
+QUOTE = re.compile(r'“([^”\n]+)”(?:[，。]?(?:见|出自)|[ \t]*——[ \t]*)《论语·([^》\n]+)》(?:[ \t]*(\d+\.\d+))?')
+LIJI_QUOTE = re.compile(r'“([^”\n]+)”(?:[，。]?(?:见|出自)|[ \t]*——[ \t]*)《礼记·([^》\n]+)》(?:[ \t]*(LJ-\d{3}-\d{3}))?')
 
 def load(path):
     return json.loads(path.read_text(encoding='utf-8'))
 
-def quote_errors(text, entries):
+def quote_errors(text, entries, liji_entries=None):
     errors = []
     # 核查明确归因的引文；解释的语义与隐含引用须人工审读。
     for match in QUOTE.finditer(text):
@@ -20,6 +21,14 @@ def quote_errors(text, entries):
         record = next((e for e in entries if e['编号'] == ident), None)
         if not record or chapter != record['篇名'] or quote not in record['原文']:
             errors.append(f'出处或原文不符：{ident} {quote}')
+    matches = list(LIJI_QUOTE.finditer(text))
+    if matches and liji_entries is None:
+        liji_entries = load(ROOT/'references/liji.json')
+    for match in matches:
+        quote, chapter, ident = match.groups()
+        if not any(e['篇名'] == chapter and quote in e['原文']
+                   and (ident is None or e['编号'] == ident) for e in liji_entries):
+            errors.append(f'礼记出处或原文不符：{chapter} {ident or ""} {quote}')
     return errors
 
 def response_errors(case, text, entries):
@@ -27,7 +36,7 @@ def response_errors(case, text, entries):
     if not text.strip():
         return errors + ['缺失回复']
     if case['引用要求'] == '不引':
-        if QUOTE.search(text) or re.match(r'\s*(?:子曰|孔子曰)', text):
+        if QUOTE.search(text) or LIJI_QUOTE.search(text) or re.match(r'\s*(?:子曰|孔子曰)', text):
             errors.append('例外情境仍然引用')
         return errors
     first_line = text.strip().splitlines()[0].strip()
